@@ -156,12 +156,25 @@ namespace LitJson.Test
             Assert.IsTrue (reader.EndOfInput, "A9");
         }
 
+        string s_Folder = null;
+        string GetFilePath(string fileName){
+            if( s_Folder==null){
+                var csfilePath = new System.Diagnostics.StackTrace(true).GetFrame(0).GetFileName();
+                s_Folder = System.IO.Path.GetDirectoryName(csfilePath);
+            }
+           
+           return System.IO.Path.Combine(s_Folder, fileName);
+        }
+
+
         [Test]
         public void FromFileTest ()
         {
-            Assembly asmb = typeof (JsonReaderTest).Assembly;
-            StreamReader stream = new StreamReader (
-                asmb.GetManifestResourceStream (asmb.GetName().Name + ".json-example.txt"));
+            // Assembly asmb = typeof (JsonReaderTest).Assembly;
+            // StreamReader stream = new StreamReader (
+            //     asmb.GetManifestResourceStream (asmb.GetName().Name + ".json-example.txt"));
+
+            StreamReader stream = new StreamReader (GetFilePath("json-example.txt"));
 
             JsonReader reader = new JsonReader (stream);
 

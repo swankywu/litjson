@@ -484,15 +484,28 @@ namespace LitJson.Test
             Assert.AreEqual ("127.0.0.1", (string) data["ip_address"], "A2");
         }
 
+        string s_Folder = null;
+        string GetFilePath(string fileName){
+            if( s_Folder==null){
+                var csfilePath = new System.Diagnostics.StackTrace(true).GetFrame(0).GetFileName();
+                s_Folder = System.IO.Path.GetDirectoryName(csfilePath);
+            }
+           
+           return System.IO.Path.Combine(s_Folder, fileName);
+        }
+
         [Test]
         public void ImportFromFileTest ()
         {
             JsonData data;
 
-            Assembly asmb = typeof (JsonMapperTest).Assembly;
+            // Assembly asmb = typeof (JsonMapperTest).Assembly;
+            // StreamReader stream = new StreamReader (
+            //     asmb.GetManifestResourceStream (asmb.GetName().Name + ".json-example.txt"));
 
             StreamReader stream = new StreamReader (
-                asmb.GetManifestResourceStream (asmb.GetName().Name + ".json-example.txt"));
+                GetFilePath("json-example.txt"));
+
 
             using (stream) {
                 data = JsonMapper.ToObject (stream);
