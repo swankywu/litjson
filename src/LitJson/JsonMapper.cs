@@ -127,6 +127,7 @@ namespace LitJson
         private static readonly object type_properties_lock = new Object ();
 
         private static readonly JsonWriter      static_writer;
+        internal static JsonWriter DefaultWriter { get { return static_writer; }}
         private static readonly object static_writer_lock = new Object ();
         #endregion
 
