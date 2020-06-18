@@ -228,7 +228,7 @@ namespace LitJson
                 data.Properties.Add (p_info.Name, p_data);
             }
 
-            foreach (FieldInfo f_info in type.GetFields ()) {
+            foreach (FieldInfo f_info in type.GetFields (BindingFlags)) {
                 PropertyMetadata p_data = new PropertyMetadata ();
                 p_data.Info = f_info;
                 p_data.IsField = true;
@@ -263,7 +263,7 @@ namespace LitJson
                 props.Add (p_data);
             }
 
-            foreach (FieldInfo f_info in type.GetFields ()) {
+            foreach (FieldInfo f_info in type.GetFields (BindingFlags)) {
                 PropertyMetadata p_data = new PropertyMetadata ();
                 p_data.Info = f_info;
                 p_data.IsField = true;
@@ -471,7 +471,6 @@ namespace LitJson
                                 continue;
                             }
                         }
-
                         ((IDictionary) instance).Add (
                             property, ReadValue (
                                 t_data.ElementType, reader));
@@ -835,14 +834,15 @@ namespace LitJson
             writer.WriteObjectStart ();
             foreach (PropertyMetadata p_data in props) {
                 if (p_data.IsField) {
-                    writer.WritePropertyName (p_data.Info.Name);
-                    WriteValue (((FieldInfo) p_data.Info).GetValue (obj),
-                                writer, writer_is_private, depth + 1);
+                    if (SerializationPolicy(p_data.Info)){
+                        writer.WritePropertyName (p_data.Info.Name);
+                        WriteValue (((FieldInfo)p_data.Info).GetValue (obj),
+                                    writer, writer_is_private, depth + 1);
+                    }
                 }
                 else {
                     PropertyInfo p_info = (PropertyInfo) p_data.Info;
-
-                    if (p_info.CanRead) {
+                    if (p_info.CanRead && SerializationPolicy(p_info)) {
                         writer.WritePropertyName (p_data.Info.Name);
                         WriteValue (p_info.GetValue (obj, null),
                                     writer, writer_is_private, depth + 1);
@@ -853,6 +853,8 @@ namespace LitJson
         }
         #endregion
 
+        internal static BindingFlags BindingFlags = BindingFlags.Public |BindingFlags.Instance;
+        internal static Func<MemberInfo, bool> SerializationPolicy = (m)=>true;
 
         public static string ToJson (object obj)
         {
