@@ -60,10 +60,19 @@ namespace LitJson
     internal struct ObjectMetadata
     {
         private Type element_type;
+         private Type key_type;
         private bool is_dictionary;
 
         private IDictionary<string, PropertyMetadata> properties;
 
+        //add by swanky
+        public Type KeyType{
+            get{
+                return key_type;
+            } set {
+                key_type = value;
+            }
+        }
 
         public Type ElementType {
             get {
@@ -203,8 +212,14 @@ namespace LitJson
 
             ObjectMetadata data = new ObjectMetadata ();
 
-            if (type.GetInterface ("System.Collections.IDictionary") != null)
+            if (type.GetInterface ("System.Collections.IDictionary") != null){
                 data.IsDictionary = true;
+                if( type.IsGenericType){
+                    Type[] arguments = type.GetGenericArguments();
+                    Type keyType = arguments[0];
+                    data.KeyType = keyType;
+                }
+            }
 
             data.Properties = new Dictionary<string, PropertyMetadata> ();
 
@@ -217,14 +232,14 @@ namespace LitJson
 
                     if (parameters[0].ParameterType == typeof (string))
                         data.ElementType = p_info.PropertyType;
-
+                    else if( data.IsDictionary)
+                        data.ElementType = p_info.PropertyType;
                     continue;
                 }
 
                 PropertyMetadata p_data = new PropertyMetadata ();
                 p_data.Info = p_info;
                 p_data.Type = p_info.PropertyType;
-
                 data.Properties.Add (p_info.Name, p_data);
             }
 
@@ -439,6 +454,7 @@ namespace LitJson
                     string property = (string) reader.Value;
 
                     if (t_data.Properties.ContainsKey (property)) {
+
                         PropertyMetadata prop_data =
                             t_data.Properties[property];
 
@@ -471,8 +487,12 @@ namespace LitJson
                                 continue;
                             }
                         }
+                        object key = property;
+                        if( t_data.IsDictionary){
+                            key = Convert.ChangeType(property, t_data.KeyType);
+                        }
                         ((IDictionary) instance).Add (
-                            property, ReadValue (
+                            key, ReadValue (
                                 t_data.ElementType, reader));
                     }
 
