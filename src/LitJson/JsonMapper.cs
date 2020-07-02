@@ -872,9 +872,11 @@ namespace LitJson
             writer.WriteObjectEnd ();
         }
         #endregion
-
+        //add by swanky
+        //used to execute custom serialization policy
         internal static BindingFlags BindingFlags = BindingFlags.Public |BindingFlags.Instance;
         internal static Func<MemberInfo, bool> SerializationPolicy = (m)=>true;
+        //--
 
         public static string ToJson (object obj)
         {
