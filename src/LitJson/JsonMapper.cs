@@ -140,6 +140,13 @@ namespace LitJson
         private static readonly object static_writer_lock = new Object ();
         #endregion
 
+        //add basic class supports
+        public static bool UseBasic;
+        public static ExporterFunc<object> BasicExporter;
+        public static ImporterFunc<object, object> BasicImporter;
+        public static Func<object, bool> BasicExporterCondition;
+        public static Func<Type, bool> BasicImporterCondition;
+        //--
 
         #region Constructors
         static JsonMapper ()
@@ -366,6 +373,12 @@ namespace LitJson
 
                     return importer (reader.Value);
                 }
+
+                 //--
+                if (UseBasic && BasicImporterCondition != null && BasicImporterCondition(value_type) && BasicImporter != null)
+                {
+                    return BasicImporter(reader.Value);
+                }//
 
                 // Maybe there's a base importer that works
                 if (base_importers_table.ContainsKey (json_type) &&
@@ -823,6 +836,13 @@ namespace LitJson
 
                 return;
             }
+
+             //
+            if (UseBasic && BasicExporterCondition != null && BasicExporterCondition(obj) && BasicExporter != null)
+            {
+                BasicExporter(obj, writer);
+                return;
+            }//--
 
             // If not, maybe there's a base exporter
             if (base_exporters_table.ContainsKey (obj_type)) {
