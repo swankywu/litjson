@@ -262,6 +262,8 @@ namespace LitJson
                     for (var i = 0; i < fields.Length; i++)
                     {
                         var f_info = fields[i];
+                        if (data.Properties.ContainsKey(f_info.Name)) continue;
+
                         PropertyMetadata p_data = new PropertyMetadata();
                         p_data.Info = f_info;
                         p_data.IsField = true;
