@@ -129,6 +129,8 @@ namespace LitJson
         private static readonly object conv_ops_lock = new Object ();
 
         private static readonly IDictionary<Type, ObjectMetadata> object_metadata;
+        private static readonly IDictionary<Type, string> abstract_types_writer;
+        private static readonly IDictionary<string, Type> abstract_types_reader;
         private static readonly object object_metadata_lock = new Object ();
 
         private static readonly IDictionary<Type,
@@ -158,6 +160,8 @@ namespace LitJson
             object_metadata = new Dictionary<Type, ObjectMetadata> ();
             type_properties = new Dictionary<Type,
                             IList<PropertyMetadata>> ();
+            abstract_types_writer = new Dictionary<Type, string>();
+            abstract_types_reader = new Dictionary<string, Type>();
 
             static_writer = new JsonWriter ();
 
@@ -250,14 +254,25 @@ namespace LitJson
                 data.Properties.Add (p_info.Name, p_data);
             }
 
-            foreach (FieldInfo f_info in type.GetFields (BindingFlags)) {
-                PropertyMetadata p_data = new PropertyMetadata ();
-                p_data.Info = f_info;
-                p_data.IsField = true;
-                p_data.Type = f_info.FieldType;
-
-                data.Properties.Add (f_info.Name, p_data);
+            if( !data.IsDictionary){
+                var typeLookup = type;
+                while (typeLookup != null && typeLookup != typeof(System.Object))
+                {
+                    var fields = typeLookup.GetFields(typeLookup!=type ? (BindingFlags.NonPublic | BindingFlags.Instance) : BindingFlags);
+                    for (var i = 0; i < fields.Length; i++)
+                    {
+                        var f_info = fields[i];
+                        PropertyMetadata p_data = new PropertyMetadata();
+                        p_data.Info = f_info;
+                        p_data.IsField = true;
+                        p_data.Type = f_info.FieldType;
+                        data.Properties.Add (f_info.Name, p_data);
+                    }
+                    typeLookup = typeLookup.BaseType;
+                }
             }
+           
+
 
             lock (object_metadata_lock) {
                 try {
@@ -282,16 +297,32 @@ namespace LitJson
                 PropertyMetadata p_data = new PropertyMetadata ();
                 p_data.Info = p_info;
                 p_data.IsField = false;
+                p_data.Type = p_info.PropertyType;
                 props.Add (p_data);
             }
 
-            foreach (FieldInfo f_info in type.GetFields (BindingFlags)) {
-                PropertyMetadata p_data = new PropertyMetadata ();
-                p_data.Info = f_info;
-                p_data.IsField = true;
-
-                props.Add (p_data);
+        
+            var typeLookup = type;
+            while (typeLookup != null && typeLookup != typeof(System.Object))
+            {
+                var fields = typeLookup.GetFields(typeLookup!=type ? (BindingFlags.NonPublic | BindingFlags.Instance)  : BindingFlags);
+                for (var i = 0; i < fields.Length; i++)
+                {
+                    var f_info = fields[i];
+                    PropertyMetadata p_data = new PropertyMetadata();
+                    p_data.Info = f_info;
+                    p_data.IsField = true;
+                    p_data.Type = f_info.FieldType;
+                    if( typeLookup!=type)
+                    {
+                        props.Insert(i, p_data);
+                    } else {
+                        props.Add(p_data);
+                    }
+                }
+                typeLookup = typeLookup.BaseType;
             }
+
 
             lock (type_properties_lock) {
                 try {
@@ -301,6 +332,41 @@ namespace LitJson
                 }
             }
         }
+
+        private static string AddAbstractType(Type type)
+        {
+            string v;
+            if( abstract_types_writer.TryGetValue(type, out v) )
+            {
+                return v.Substring(v.IndexOf('|') + 1);
+            }
+            v = string.Format("{0},{1}|{2}", type.FullName, type.Assembly.GetName().Name, abstract_types_writer.Count);
+            abstract_types_writer.Add(type, v);
+            return v;
+        }
+
+        private static Type GetAbstractType(string strType)
+        {
+            Type v;
+            int num = strType.IndexOf('|');
+            if( num > -1)
+            {
+                var key =  strType.Substring(num+ 1);
+                v = Type.GetType(strType.Substring(0, num));
+                abstract_types_reader.Add(key, v);
+                return v;
+            }else 
+            {
+                return abstract_types_reader[strType];
+            }
+        }
+
+        private static void Reset()
+        {
+            abstract_types_writer.Clear();
+            abstract_types_reader.Clear();
+        }
+
 
         private static MethodInfo GetConvOp (Type t1, Type t2)
         {
@@ -453,6 +519,19 @@ namespace LitJson
                     instance = list;
 
             } else if (reader.Token == JsonToken.ObjectStart) {
+
+                //-- add abstract support by swanky
+                if( value_type.IsAbstract ){
+                    reader.Read (); //$t
+#if UNITY_EDITOR
+                    if( reader.Value.ToString().IndexOf('$') < 0)
+                        throw new Exception("Key is not found!");
+#endif
+
+                    reader.Read (); //$t's value
+                    value_type = GetAbstractType(reader.Value.ToString());
+                }
+                //--
                 AddObjectMetadata (value_type);
                 ObjectMetadata t_data = object_metadata[value_type];
 
@@ -502,7 +581,12 @@ namespace LitJson
                         }
                         object key = property;
                         if( t_data.IsDictionary){
-                            key = Convert.ChangeType(property, t_data.KeyType);
+                            if( t_data.KeyType == typeof( Type)){
+                                key = Type.GetType(property);
+                            } else {
+                                key = Convert.ChangeType(property, t_data.KeyType);
+
+                            }
                         }
                         ((IDictionary) instance).Add (
                             key, ReadValue (
@@ -745,7 +829,7 @@ namespace LitJson
 
         private static void WriteValue (object obj, JsonWriter writer,
                                         bool writer_is_private,
-                                        int depth)
+                                        int depth, bool writeType)
         {
             if (depth > max_nesting_depth)
                 throw new JsonException (
@@ -796,7 +880,7 @@ namespace LitJson
                 writer.WriteArrayStart ();
 
                 foreach (object elem in (Array) obj)
-                    WriteValue (elem, writer, writer_is_private, depth + 1);
+                    WriteValue (elem, writer, writer_is_private, depth + 1, true);
 
                 writer.WriteArrayEnd ();
 
@@ -806,7 +890,7 @@ namespace LitJson
             if (obj is IList) {
                 writer.WriteArrayStart ();
                 foreach (object elem in (IList) obj)
-                    WriteValue (elem, writer, writer_is_private, depth + 1);
+                    WriteValue (elem, writer, writer_is_private, depth + 1, true);
                 writer.WriteArrayEnd ();
 
                 return;
@@ -820,7 +904,7 @@ namespace LitJson
                         : Convert.ToString(entry.Key, CultureInfo.InvariantCulture);
                     writer.WritePropertyName (propertyName);
                     WriteValue (entry.Value, writer, writer_is_private,
-                                depth + 1);
+                                depth + 1, true);
                 }
                 writer.WriteObjectEnd ();
 
@@ -871,13 +955,25 @@ namespace LitJson
             AddTypeProperties (obj_type);
             IList<PropertyMetadata> props = type_properties[obj_type];
 
-            writer.WriteObjectStart ();
+            writer.WriteObjectStart();
+            
+            //--added by swanky
+            //add abastract type support
+            if( writeType)
+            {
+                writer.WritePropertyName ("$t");
+              
+                WriteValue ( AddAbstractType(obj_type),
+                                    writer, writer_is_private, depth + 1, false);
+            }
+            //--
             foreach (PropertyMetadata p_data in props) {
+               
                 if (p_data.IsField) {
                     if (SerializationPolicy(p_data.Info)){
                         writer.WritePropertyName (p_data.Info.Name);
                         WriteValue (((FieldInfo)p_data.Info).GetValue (obj),
-                                    writer, writer_is_private, depth + 1);
+                                    writer, writer_is_private, depth + 1, p_data.Type.IsAbstract);
                     }
                 }
                 else {
@@ -885,16 +981,17 @@ namespace LitJson
                     if (p_info.CanRead && SerializationPolicy(p_info)) {
                         writer.WritePropertyName (p_data.Info.Name);
                         WriteValue (p_info.GetValue (obj, null),
-                                    writer, writer_is_private, depth + 1);
+                                    writer, writer_is_private, depth + 1, p_data.Type.IsAbstract);
                     }
                 }
+                
             }
             writer.WriteObjectEnd ();
         }
         #endregion
         //add by swanky
         //used to execute custom serialization policy
-        internal static BindingFlags BindingFlags = BindingFlags.Public |BindingFlags.Instance;
+        internal static BindingFlags BindingFlags = BindingFlags.Public | BindingFlags.Instance;
         internal static Func<MemberInfo, bool> SerializationPolicy = (m)=>true;
         //--
 
@@ -902,8 +999,8 @@ namespace LitJson
         {
             lock (static_writer_lock) {
                 static_writer.Reset ();
-
-                WriteValue (obj, static_writer, true, 0);
+                Reset();
+                WriteValue (obj, static_writer, true, 0, false);
 
                 return static_writer.ToString ();
             }
@@ -911,7 +1008,8 @@ namespace LitJson
 
         public static void ToJson (object obj, JsonWriter writer)
         {
-            WriteValue (obj, writer, false, 0);
+            Reset();
+            WriteValue (obj, writer, false, 0, false);
         }
 
         public static JsonData ToObject (JsonReader reader)
@@ -936,11 +1034,13 @@ namespace LitJson
 
         public static T ToObject<T> (JsonReader reader)
         {
+            Reset();
             return (T) ReadValue (typeof (T), reader);
         }
 
         public static T ToObject<T> (TextReader reader)
         {
+            Reset();
             JsonReader json_reader = new JsonReader (reader);
 
             return (T) ReadValue (typeof (T), json_reader);
@@ -948,6 +1048,7 @@ namespace LitJson
 
         public static T ToObject<T> (string json)
         {
+            Reset();
             JsonReader reader = new JsonReader (json);
 
             return (T) ReadValue (typeof (T), reader);
@@ -955,6 +1056,7 @@ namespace LitJson
         
         public static object ToObject(string json, Type ConvertType )
         {
+            Reset();
             JsonReader reader = new JsonReader(json);
 
             return ReadValue(ConvertType, reader);
