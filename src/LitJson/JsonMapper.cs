@@ -596,7 +596,12 @@ namespace LitJson
                     }
 
                 }
-
+                //------ISerializationCallbackReceiver added by swanky
+                if( instance is UnityEngine.ISerializationCallbackReceiver callback)
+                {
+                    callback.OnAfterDeserialize();
+                }
+                //------
             }
 
             return instance;
@@ -956,7 +961,12 @@ namespace LitJson
             // object
             AddTypeProperties (obj_type);
             IList<PropertyMetadata> props = type_properties[obj_type];
-
+            //---- ISerializationCallbackReceiver added by swanky
+            if( obj is UnityEngine.ISerializationCallbackReceiver callback)
+            {
+                callback.OnBeforeSerialize();
+            }
+            //---
             writer.WriteObjectStart();
             
             //--added by swanky
