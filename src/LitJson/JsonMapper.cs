@@ -908,7 +908,8 @@ namespace LitJson
                 foreach (DictionaryEntry entry in dictionary) {
                     var propertyName = entry.Key is string key ?
                         key
-                        : Convert.ToString(entry.Key, CultureInfo.InvariantCulture);
+                        : (entry.Key is Type tType? $"{tType.FullName},{tType.Assembly.GetName().Name}" 
+                        : Convert.ToString(entry.Key, CultureInfo.InvariantCulture));
                     writer.WritePropertyName (propertyName);
                     WriteValue (entry.Value, writer, writer_is_private,
                                 depth + 1, true);
