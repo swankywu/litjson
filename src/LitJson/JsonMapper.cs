@@ -355,6 +355,8 @@ namespace LitJson
             {
                 var key =  strType.Substring(num+ 1);
                 v = Type.GetType(strType.Substring(0, num));
+                if (v == null)
+                    return null;
                 abstract_types_reader.Add(key, v);
                 return v;
             }else 
@@ -505,6 +507,7 @@ namespace LitJson
 
                 while (true) {
                     object item = ReadValue (elem_type, reader);
+                    if (item == s_IgnoreObject) continue; //ignore this object, this only support the fist array item see #541
                     if (item == null && reader.Token == JsonToken.ArrayEnd)
                         break;
 
@@ -534,6 +537,20 @@ namespace LitJson
                     value_type = GetAbstractType(reader.Value.ToString());
                 }
                 //--
+#if !UNITY_EDITOR
+                //on build version, we will ignore all objects that don't include in the binary.
+                if(value_type == null){
+                    
+                      while (true) { //ignore all field inside this object
+                        reader.Read ();
+                        if (reader.Token == JsonToken.ObjectEnd)
+                            break;
+                      }
+                    return s_IgnoreObject;
+                }
+#else
+                UnityEngine.Assertions.Assert.IsNotNull(value_type);
+#endif
                 AddObjectMetadata (value_type);
                 ObjectMetadata t_data = object_metadata[value_type];
 
@@ -606,6 +623,8 @@ namespace LitJson
 
             return instance;
         }
+
+        private static readonly Object s_IgnoreObject = new Object();
 
         private static IJsonWrapper ReadValue (WrapperFactory factory,
                                                JsonReader reader)
