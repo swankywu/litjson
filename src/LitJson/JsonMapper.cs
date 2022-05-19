@@ -24,6 +24,7 @@ namespace LitJson
         public MemberInfo Info;
         public bool       IsField;
         public Type       Type;
+        public string FormerlySerializedAs;
     }
 
 
@@ -94,6 +95,8 @@ namespace LitJson
             get { return properties; }
             set { properties = value; }
         }
+
+        public IDictionary<string, PropertyMetadata> FormerlyProperties;
     }
 
 
@@ -252,6 +255,14 @@ namespace LitJson
                 p_data.Info = p_info;
                 p_data.Type = p_info.PropertyType;
                 data.Properties.Add (p_info.Name, p_data);
+                var att = p_info.GetCustomAttribute<UnityEngine.Serialization.FormerlySerializedAsAttribute>();
+                if (att != null)
+                {
+                    p_data.FormerlySerializedAs = att.oldName;
+                    if (data.FormerlyProperties == null)
+                        data.FormerlyProperties = new Dictionary<string, PropertyMetadata>();
+                    data.FormerlyProperties.Add(p_data.FormerlySerializedAs, p_data);
+                }
             }
 
             if( !data.IsDictionary){
@@ -268,6 +279,14 @@ namespace LitJson
                         p_data.Info = f_info;
                         p_data.IsField = true;
                         p_data.Type = f_info.FieldType;
+                        var att = f_info.GetCustomAttribute<UnityEngine.Serialization.FormerlySerializedAsAttribute>();
+                        if (att != null)
+                        {
+                            p_data.FormerlySerializedAs = att.oldName;
+                            if (data.FormerlyProperties == null)
+                                data.FormerlyProperties = new Dictionary<string, PropertyMetadata>();
+                            data.FormerlyProperties.Add(p_data.FormerlySerializedAs, p_data);
+                        }
                         data.Properties.Add (f_info.Name, p_data);
                     }
                     typeLookup = typeLookup.BaseType;
@@ -300,6 +319,11 @@ namespace LitJson
                 p_data.Info = p_info;
                 p_data.IsField = false;
                 p_data.Type = p_info.PropertyType;
+                var att = p_info.GetCustomAttribute<UnityEngine.Serialization.FormerlySerializedAsAttribute>();
+                if (att != null)
+                {
+                    p_data.FormerlySerializedAs = att.oldName;
+                }
                 props.Add (p_data);
             }
 
@@ -307,7 +331,8 @@ namespace LitJson
             var typeLookup = type;
             while (typeLookup != null && typeLookup != typeof(System.Object))
             {
-                var fields = typeLookup.GetFields(typeLookup!=type ? (BindingFlags.NonPublic | BindingFlags.Instance)  : BindingFlags);
+                //BindingFlags.Instance will include "protected" members
+                var fields = typeLookup.GetFields(typeLookup != type ? (BindingFlags.NonPublic | BindingFlags.Instance) : BindingFlags);
                 for (var i = 0; i < fields.Length; i++)
                 {
                     var f_info = fields[i];
@@ -315,8 +340,14 @@ namespace LitJson
                     p_data.Info = f_info;
                     p_data.IsField = true;
                     p_data.Type = f_info.FieldType;
+                    var att = f_info.GetCustomAttribute<UnityEngine.Serialization.FormerlySerializedAsAttribute>();
+                    if (att != null)
+                    {
+                        p_data.FormerlySerializedAs = att.oldName;
+                    }
                     if( typeLookup!=type)
                     {
+                        TryRemovingExistingInList(props, f_info.Name);
                         props.Insert(i, p_data);
                     } else {
                         props.Add(p_data);
@@ -333,6 +364,19 @@ namespace LitJson
                     return;
                 }
             }
+        }
+
+        private static bool TryRemovingExistingInList(IList<PropertyMetadata> list, string name)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Info.Name == name)
+                {
+                    list.RemoveAt(i);
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static string AddAbstractType(Type type)
@@ -564,26 +608,20 @@ namespace LitJson
 
                     string property = (string) reader.Value;
 
+                    //read formerly properties
+                    object value = null;
+                    if (t_data.FormerlyProperties != null && t_data.FormerlyProperties.ContainsKey(property))
+                    {
+                        PropertyMetadata prop_data2 =
+                        t_data.FormerlyProperties[property];
+                        value = ReadProperty(instance, value, prop_data2, reader);
+                    }
+
                     if (t_data.Properties.ContainsKey (property)) {
 
                         PropertyMetadata prop_data =
                             t_data.Properties[property];
-
-                        if (prop_data.IsField) {
-                            ((FieldInfo) prop_data.Info).SetValue (
-                                instance, ReadValue (prop_data.Type, reader));
-                        } else {
-                            PropertyInfo p_info =
-                                (PropertyInfo) prop_data.Info;
-
-                            if (p_info.CanWrite)
-                                p_info.SetValue (
-                                    instance,
-                                    ReadValue (prop_data.Type, reader),
-                                    null);
-                            else
-                                ReadValue (prop_data.Type, reader);
-                        }
+                        ReadProperty(instance, value, prop_data, reader);
 
                     } else {
                         if (! t_data.IsDictionary) {
@@ -622,6 +660,29 @@ namespace LitJson
             }
 
             return instance;
+        }
+
+        private static object ReadProperty(object instance, object value, PropertyMetadata prop_data, JsonReader reader)
+        {
+            if (value == null)
+                value = ReadValue(prop_data.Type, reader);
+            if (prop_data.IsField)
+            {
+                ((FieldInfo)prop_data.Info).SetValue(
+                    instance, value);
+            }
+            else
+            {
+                PropertyInfo p_info =
+                    (PropertyInfo)prop_data.Info;
+
+                if (p_info.CanWrite)
+                    p_info.SetValue(
+                        instance,
+                        value,
+                        null);
+            }
+            return value;
         }
 
         private static readonly Object s_IgnoreObject = new Object();
@@ -1003,15 +1064,32 @@ namespace LitJson
                
                 if (p_data.IsField) {
                     if (SerializationPolicy(p_data.Info)){
-                        writer.WritePropertyName (p_data.Info.Name);
+                        if (p_data.FormerlySerializedAs != null)
+                        {
+                            writer.WritePropertyName(p_data.FormerlySerializedAs);
+                        }
+                        else
+                        {
+                            writer.WritePropertyName(p_data.Info.Name);
+
+                        }
                         WriteValue (((FieldInfo)p_data.Info).GetValue (obj),
                                     writer, writer_is_private, depth + 1, p_data.Type.IsAbstract);
                     }
                 }
                 else {
                     PropertyInfo p_info = (PropertyInfo) p_data.Info;
-                    if (p_info.CanRead && SerializationPolicy(p_info)) {
-                        writer.WritePropertyName (p_data.Info.Name);
+                    if (p_info.CanWrite && p_info.CanRead && SerializationPolicy(p_info))
+                    {
+                        if (p_data.FormerlySerializedAs != null)
+                        {
+                            writer.WritePropertyName(p_data.FormerlySerializedAs);
+                        }
+                        else
+                        {
+                            writer.WritePropertyName(p_data.Info.Name);
+                        }
+
                         WriteValue (p_info.GetValue (obj, null),
                                     writer, writer_is_private, depth + 1, p_data.Type.IsAbstract);
                     }
