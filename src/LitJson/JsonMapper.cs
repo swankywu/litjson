@@ -609,19 +609,18 @@ namespace LitJson
                     string property = (string) reader.Value;
 
                     //read formerly properties
-                    object value = null;
                     if (t_data.FormerlyProperties != null && t_data.FormerlyProperties.ContainsKey(property))
                     {
                         PropertyMetadata prop_data2 =
                         t_data.FormerlyProperties[property];
-                        value = ReadProperty(instance, value, prop_data2, reader);
+                        ReadProperty(instance, prop_data2, reader);
                     }
-
-                    if (t_data.Properties.ContainsKey (property)) {
+                    else if (t_data.Properties.ContainsKey(property))
+                    {
 
                         PropertyMetadata prop_data =
                             t_data.Properties[property];
-                        ReadProperty(instance, value, prop_data, reader);
+                        ReadProperty(instance, prop_data, reader);
 
                     } else {
                         if (! t_data.IsDictionary) {
@@ -662,10 +661,9 @@ namespace LitJson
             return instance;
         }
 
-        private static object ReadProperty(object instance, object value, PropertyMetadata prop_data, JsonReader reader)
+        private static object ReadProperty(object instance, PropertyMetadata prop_data, JsonReader reader)
         {
-            if (value == null)
-                value = ReadValue(prop_data.Type, reader);
+            var value = ReadValue(prop_data.Type, reader);
             if (prop_data.IsField)
             {
                 ((FieldInfo)prop_data.Info).SetValue(
